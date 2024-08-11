@@ -1,0 +1,244 @@
+Certainly! Using RabbitMQ as a message broker to ingest jobs is a robust and scalable solution. Below is an example of how you can set up a job processing system with RabbitMQ in Go.
+
+### Step-by-Step Plan
+
+1. **Setup RabbitMQ**:
+   - Install and run RabbitMQ on your machine or use a cloud-based RabbitMQ service.
+
+2. **Install RabbitMQ Client Library**:
+   - Use the `github.com/streadway/amqp` package to interact with RabbitMQ.
+
+3. **Producer**:
+   - Create a producer that sends jobs to a RabbitMQ queue.
+
+4. **Consumer**:
+   - Create a consumer that receives jobs from the RabbitMQ queue and processes them.
+
+### Example Code
+
+#### Producer (Job Submission)
+
+```go
+package main
+
+import (
+	"encoding/json"
+	"log"
+	"net/http"
+
+	"github.com/streadway/amqp"
+)
+
+// Job represents a job to be processed
+type Job struct {
+	ID      int    `json:"id"`
+	Payload string `json:"payload"`
+}
+
+// RabbitMQ connection details
+const (
+	rabbitMQURL = "amqp://guest:guest@localhost:5672/"
+	queueName   = "job_queue"
+)
+
+// JobSubmissionHandler handles job submissions
+func JobSubmissionHandler(w http.ResponseWriter, r *http.Request) {
+	var job Job
+	if err := json.NewDecoder(r.Body).Decode(&job); err != nil {
+		http.Error(w, "Invalid job format", http.StatusBadRequest)
+		return
+	}
+
+	conn, err := amqp.Dial(rabbitMQURL)
+	if err != nil {
+		log.Fatalf("Failed to connect to RabbitMQ: %v", err)
+	}
+	defer conn.Close()
+
+	ch, err := conn.Channel()
+	if err != nil {
+		log.Fatalf("Failed to open a channel: %v", err)
+	}
+	defer ch.Close()
+
+	q, err := ch.QueueDeclare(
+		queueName, // name
+		true,      // durable
+		false,     // delete when unused
+		false,     // exclusive
+		false,     // no-wait
+		nil,       // arguments
+	)
+	if err != nil {
+		log.Fatalf("Failed to declare a queue: %v", err)
+	}
+
+	body, err := json.Marshal(job)
+	if err != nil {
+		http.Error(w, "Failed to encode job", http.StatusInternalServerError)
+		return
+	}
+
+	err = ch.Publish(
+		"",     // exchange
+		q.Name, // routing key
+		false,  // mandatory
+		false,  // immediate
+		amqp.Publishing{
+			ContentType: "application/json",
+			Body:        body,
+		})
+	if err != nil {
+		log.Fatalf("Failed to publish a message: %v", err)
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+	log.Printf("Job %d submitted\n", job.ID)
+}
+
+func main() {
+	http.HandleFunc("/submit", JobSubmissionHandler)
+	log.Println("Starting server on :8080")
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		log.Fatalf("Server failed: %v", err)
+	}
+}
+```
+
+#### Consumer (Job Processing)
+
+```go
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"math/rand"
+	"sync"
+	"time"
+
+	"github.com/streadway/amqp"
+)
+
+// Job represents a job to be processed
+type Job struct {
+	ID      int    `json:"id"`
+	Payload string `json:"payload"`
+}
+
+// Worker represents a worker that processes jobs
+type Worker struct {
+	ID         int
+	JobChannel chan Job
+	WaitGroup  *sync.WaitGroup
+}
+
+// NewWorker creates a new worker
+func NewWorker(id int, jobChannel chan Job, wg *sync.WaitGroup) Worker {
+	return Worker{
+		ID:         id,
+		JobChannel: jobChannel,
+		WaitGroup:  wg,
+	}
+}
+
+// Start starts the worker to process jobs
+func (w Worker) Start() {
+	go func() {
+		for job := range w.JobChannel {
+			startTime := time.Now() // Record start time
+			fmt.Printf("Worker %d processing job %d with payload: %s\n", w.ID, job.ID, job.Payload)
+			randInt := rand.Intn(5) + 1
+			time.Sleep(time.Duration(randInt) * time.Second) // Simulate job processing time
+			duration := time.Since(startTime) // Calculate duration
+			fmt.Printf("Worker %d finished job %d in %v\n", w.ID, job.ID, duration)
+			w.WaitGroup.Done()
+		}
+	}()
+}
+
+func main() {
+	const numWorkers = 3
+	const queueSize = 10
+
+	jobChannel := make(chan Job, queueSize)
+	var wg sync.WaitGroup
+
+	// Seed the random number generator
+	rand.Seed(time.Now().UnixNano())
+
+	// Create and start workers
+	for i := 1; i <= numWorkers; i++ {
+		worker := NewWorker(i, jobChannel, &wg)
+		worker.Start()
+	}
+
+	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
+	if err != nil {
+		log.Fatalf("Failed to connect to RabbitMQ: %v", err)
+	}
+	defer conn.Close()
+
+	ch, err := conn.Channel()
+	if err != nil {
+		log.Fatalf("Failed to open a channel: %v", err)
+	}
+	defer ch.Close()
+
+	q, err := ch.QueueDeclare(
+		"job_queue", // name
+		true,        // durable
+		false,       // delete when unused
+		false,       // exclusive
+		false,       // no-wait
+		nil,         // arguments
+	)
+	if err != nil {
+		log.Fatalf("Failed to declare a queue: %v", err)
+	}
+
+	msgs, err := ch.Consume(
+		q.Name, // queue
+		"",     // consumer
+		true,   // auto-ack
+		false,  // exclusive
+		false,  // no-local
+		false,  // no-wait
+		nil,    // args
+	)
+	if err != nil {
+		log.Fatalf("Failed to register a consumer: %v", err)
+	}
+
+	go func() {
+		for d := range msgs {
+			var job Job
+			if err := json.Unmarshal(d.Body, &job); err != nil {
+				log.Printf("Failed to decode job: %v", err)
+				continue
+			}
+			wg.Add(1)
+			jobChannel <- job
+		}
+	}()
+
+	log.Println("Waiting for messages. To exit press CTRL+C")
+	wg.Wait()
+	close(jobChannel)
+
+	log.Println("All jobs processed")
+}
+```
+
+### Explanation
+
+1. **Producer**:
+   - **JobSubmissionHandler**: Handles HTTP POST requests to submit jobs. It encodes the job as JSON and publishes it to the RabbitMQ queue.
+   - **RabbitMQ Connection**: Establishes a connection to RabbitMQ, declares a queue, and publishes the job message.
+
+2. **Consumer**:
+   - **Worker**: Represents a worker that processes jobs from the job channel.
+   - **Main Function**: Connects to RabbitMQ, declares a queue, and consumes messages from the queue. Each message is decoded into a `Job` struct and sent to the job channel for processing by workers.
+
+This setup allows you to ingest jobs via HTTP requests and process them using a worker pool, with RabbitMQ handling the message brokering.
