@@ -73,8 +73,16 @@ var jobProcessedCounter = prometheus.NewCounter(
 	},
 )
 
+var jobDurationHistogram = prometheus.NewHistogram(
+	prometheus.HistogramOpts{
+		Name:    "job_duration_seconds",
+		Help:    "Duration of jobs in seconds",
+		Buckets: prometheus.DefBuckets,
+	},
+)
+
 func init() {
-	prometheus.MustRegister(jobProcessedCounter)
+	prometheus.MustRegister(jobProcessedCounter, jobDurationHistogram)
 }
 
 // Start starts the worker to process jobs
@@ -101,12 +109,12 @@ func (w Worker) Start(qr *pgstore.Queries) {
 				RequestPath:      job.Payload.RequestPath,
 			})
 
+			jobProcessedCounter.Inc()
+
 			duration := time.Since(startTime) // Calculate duration
 			fmt.Printf("Worker %d finished job %s in %v\n", w.ID, job.ID.String(), duration)
 
-			jobProcessedCounter.Inc()
-
-			// Add a duration tracking metric
+			jobDurationHistogram.Observe(duration.Seconds())
 
 			w.WaitGroup.Done()
 		}
