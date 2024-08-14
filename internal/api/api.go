@@ -1,13 +1,13 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/CaioDGallo/go-ama-queue/internal/store/pgstore"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type apiHandler struct {
@@ -36,33 +36,9 @@ func NewHandler(q *pgstore.Queries) http.Handler {
 		MaxAge:           300,
 	}))
 
-	r.Route("/api", func(r chi.Router) {
-		r.Route("/rooms", func(r chi.Router) {
-			r.Post("/", a.handleCreateRoom)
-		})
-	})
+	r.Handle("/metrics", promhttp.Handler())
 
 	a.r = r
 
 	return a
-}
-
-func (h apiHandler) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
-	type _body struct {
-		Theme string `json:"theme"`
-	}
-
-	var body _body
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
-		return
-	}
-	type response struct {
-		ID string `json:"id"`
-	}
-
-	data, _ := json.Marshal(response{ID: ""})
-
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(data)
 }

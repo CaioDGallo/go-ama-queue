@@ -3,18 +3,22 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log"
+	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
 	"sync"
 	"time"
 
+	"github.com/CaioDGallo/go-ama-queue/internal/api"
 	"github.com/CaioDGallo/go-ama-queue/internal/store/pgstore"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/streadway/amqp"
 )
 
@@ -62,6 +66,17 @@ func NewWorker(id int, jobChannel chan Job, wg *sync.WaitGroup) Worker {
 	}
 }
 
+var jobProcessedCounter = prometheus.NewCounter(
+	prometheus.CounterOpts{
+		Name: "jobs_processed_total",
+		Help: "Total number of processed jobs",
+	},
+)
+
+func init() {
+	prometheus.MustRegister(jobProcessedCounter)
+}
+
 // Start starts the worker to process jobs
 func (w Worker) Start(qr *pgstore.Queries) {
 	go func() {
@@ -88,6 +103,11 @@ func (w Worker) Start(qr *pgstore.Queries) {
 
 			duration := time.Since(startTime) // Calculate duration
 			fmt.Printf("Worker %d finished job %s in %v\n", w.ID, job.ID.String(), duration)
+
+			jobProcessedCounter.Inc()
+
+			// Add a duration tracking metric
+
 			w.WaitGroup.Done()
 		}
 	}()
@@ -120,6 +140,16 @@ func main() {
 		panic(err)
 	}
 
+	handler := api.NewHandler(pgstore.New(pool))
+
+	go func() {
+		if err := http.ListenAndServe(":8080", handler); err != nil {
+			if !errors.Is(err, http.ErrServerClosed) {
+				panic(err)
+			}
+		}
+	}()
+
 	qr := pgstore.New(pool)
 
 	// Set the number of OS threads to use
@@ -139,15 +169,15 @@ func main() {
 		worker.Start(qr)
 	}
 
-	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
+	conn, err := amqp.Dial("amqp://guest:guest@rabbitmq:5672/")
 	if err != nil {
-		log.Fatalf("Failed to connect to RabbitMQ: %v", err)
+		slog.Error("Failed to connect to RabbitMQ: %v", "error", err)
 	}
 	defer conn.Close()
 
 	ch, err := conn.Channel()
 	if err != nil {
-		log.Fatalf("Failed to open a channel: %v", err)
+		slog.Error("Failed to open a channel: %v", "error", err)
 	}
 	defer ch.Close()
 
@@ -160,7 +190,7 @@ func main() {
 		nil,                      // arguments
 	)
 	if err != nil {
-		log.Fatalf("Failed to declare a queue: %v", err)
+		slog.Error("Failed to declare a queue: %v", "error", err)
 	}
 
 	msgs, err := ch.Consume(
@@ -173,7 +203,7 @@ func main() {
 		nil,    // args
 	)
 	if err != nil {
-		log.Fatalf("Failed to register a consumer: %v", err)
+		slog.Error("Failed to register a consumer: %v", "error", err)
 	}
 
 	go func() {
@@ -185,14 +215,14 @@ func main() {
 				}
 				var job Job
 				if err := json.Unmarshal(d.Body, &job); err != nil {
-					log.Printf("Failed to decode job: %v", err)
+					slog.Error("Failed to decode job: %v", "error", err)
 					continue
 				}
 				wg.Add(1)
 				func() {
 					defer func() {
 						if r := recover(); r != nil {
-							log.Printf("Failed to send job to jobChannel: %v", r)
+							slog.Error("Failed to send job to jobChannel: %v", "error", r)
 						}
 					}()
 					jobChannel <- job
@@ -203,10 +233,10 @@ func main() {
 		}
 	}()
 
-	log.Println("Waiting for messages. To exit press CTRL+C")
+	slog.Info("Waiting for messages. To exit press CTRL+C")
 	<-quit
 	wg.Wait()
 	close(jobChannel)
 
-	log.Println("All jobs processed")
+	slog.Info("All jobs processed")
 }

@@ -11,6 +11,42 @@ services:
     volumes:
       - db:/var/lib/postgresql/data
 
+  prometheus:
+    image: prom/prometheus
+    restart: unless-stopped
+    container_name: "gama-prometheus"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./:/etc/prometheus
+
+  grafana:
+    image: grafana/grafana-oss
+    restart: unless-stopped
+    container_name: "gama-grafana"
+    ports:
+      - "3000:3000"
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    restart: unless-stopped
+    container_name: gama-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  gama-queue:
+    container_name: gama-queue
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8080"
+    depends_on:
+      - db
+      - rabbitmq
+    command: ["wait-for-it.sh", "rabbitmq:5672", "--", "./main"]
+
 volumes:
   db:
     driver: local
