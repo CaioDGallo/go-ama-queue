@@ -13,6 +13,8 @@ jobs:
         uses: actions/checkout@v4
       - name: Login to Docker Hub
         run: docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+      - name: Change Grafana default password
+        run: sed -i "s/^GAMA_GRAFANA_PASSWORD=.*/GAMA_GRAFANA_PASSWORD=\"${{ secrets.GRAFANA_PASSWORD }}\"/" .env
       - name: Build Docker Image
         run: docker build -t caiogallo2401/go-ama-queue .
       - name: Push Image to Docker Hub
