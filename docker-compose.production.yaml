@@ -1,0 +1,49 @@
+services:
+  db:
+    image: postgres:latest
+    restart: unless-stopped
+    ports:
+      - ${GAMA_QUEUE_DATABASE_PORT:-5432}:5432
+    environment:
+      POSTGRES_USER: ${GAMA_QUEUE_DATABASE_USER}
+      POSTGRES_PASSWORD: ${GAMA_QUEUE_DATABASE_PASSWORD}
+      POSTGRES_DB: ${GAMA_QUEUE_DATABASE_NAME}
+    volumes:
+      - db:/var/lib/postgresql/data
+
+  prometheus:
+    image: prom/prometheus
+    restart: unless-stopped
+    container_name: "gama-prometheus"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./:/etc/prometheus
+
+  grafana:
+    image: grafana/grafana-oss
+    restart: unless-stopped
+    container_name: "gama-grafana"
+    ports:
+      - "3000:3000"
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    restart: unless-stopped
+    container_name: gama-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  gama-queue:
+    container_name: gama-queue
+    image: caiogallo2401/go-ama-queue:latest
+    ports:
+      - "8081:8080"
+    depends_on:
+      - db
+      - rabbitmq
+
+volumes:
+  db:
+    driver: local

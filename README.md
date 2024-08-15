@@ -54,7 +54,7 @@ To get started with the Go AMA application, follow these steps:
 Once the application is up and running, you can start processing messages. Currently the only two endpoints that generate user data to be processed are the Create Room and the Ask a Question endpoints:
 
 This is the postman collection to run the endpoints of the main [GAMA](https://github.com/CaioDGallo/go-ama) application:
-[![Run in Postman](https://run.pstmn.io/button.svg)](https://github.com/CaioDGallo/go-ama/docs/GAMA.postman_collection.json)
+[![Run in Postman](https://run.pstmn.io/button.svg)](https://raw.githubusercontent.com/CaioDGallo/go-ama/main/docs/GAMA.postman_collection.json)
 
 ## License
 
