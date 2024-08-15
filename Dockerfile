@@ -2,7 +2,8 @@ FROM golang:1.22.6-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache bash=5.1.0-r0
+#install bash lts
+RUN apk add --no-cache bash=5.2.32-r0
 
 COPY go.mod go.sum ./
 
