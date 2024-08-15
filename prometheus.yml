@@ -5,3 +5,19 @@ scrape_configs:
   - job_name: 'user_data_collection'
     static_configs:
       - targets: ['gama-queue:8080']
+  
+  - job_name: 'rabbitmq_monitoring'
+    static_configs:
+      - targets: ['rabbitmq:15692']
+  
+  - job_name: 'gama_queue_postgresql_monitoring'
+    static_configs:
+      - targets: ['gama-queue-postgres-exporter:9187']
+  
+  - job_name: 'gama_api_monitoring'
+    static_configs:
+      - targets: ['172.17.0.1:8080']
+
+  - job_name: 'gama_postgresql_monitoring'
+    static_configs:
+      - targets: ['172.17.0.1:9187']

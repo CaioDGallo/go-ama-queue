@@ -1,5 +1,5 @@
 services:
-  db:
+  gama-queue-db:
     image: postgres:latest
     restart: unless-stopped
     ports:
@@ -10,6 +10,16 @@ services:
       POSTGRES_DB: ${GAMA_QUEUE_DATABASE_NAME}
     volumes:
       - db:/var/lib/postgresql/data
+
+  gama-queue-postgres-exporter:
+    image: prometheuscommunity/postgres-exporter
+    ports:
+      - 9188:9187
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${GAMA_QUEUE_DATABASE_USER}:${GAMA_QUEUE_DATABASE_PASSWORD}@${GAMA_QUEUE_DATABASE_HOST}:5433/${GAMA_QUEUE_DATABASE_NAME}?sslmode=disable"
+    links:
+      - gama-queue-db
+      - prometheus
 
   prometheus:
     image: prom/prometheus
@@ -26,6 +36,8 @@ services:
     container_name: "gama-grafana"
     ports:
       - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
 
   rabbitmq:
     image: rabbitmq:3.13-management
@@ -34,6 +46,12 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+      - "15692:15692"
+    command: >
+      sh -c "
+        rabbitmq-plugins enable --offline rabbitmq_prometheus &&
+        rabbitmq-server
+      "
 
   gama-queue:
     container_name: gama-queue
@@ -43,10 +61,11 @@ services:
     ports:
       - "8081:8080"
     depends_on:
-      - db
+      - gama-queue-db
       - rabbitmq
-    command: ["wait-for-it.sh", "rabbitmq:5672", "--", "./main"]
 
 volumes:
   db:
+    driver: local
+  grafana_data:
     driver: local
