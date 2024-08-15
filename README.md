@@ -1,4 +1,4 @@
-# Go - GAMA Message Queue and Metrics
+# GAMA - Message Queue and Metrics
 
 ![GoLang + RabbitMQ + Prometheus + Grafana](docs/assets/hero.png)
 
