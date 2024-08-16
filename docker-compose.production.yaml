@@ -43,6 +43,8 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/grafana.ini:/etc/grafana/grafana.ini
+      - /etc/letsencrypt/live/dash.gama.dessaperfumaria.com.br/fullchain.pem:/etc/grafana/fullchain.pem
+      - /etc/letsencrypt/live/dash.gama.dessaperfumaria.com.br/privkey.pem:/etc/grafana/privkey.pem
 
   rabbitmq:
     image: rabbitmq:3.13-management
