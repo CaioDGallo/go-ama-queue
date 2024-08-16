@@ -34,17 +34,11 @@ services:
     image: grafana/grafana-oss
     restart: unless-stopped
     container_name: "gama-grafana"
-    environment:
-      - GF_SERVER_DOMAIN=dash.gama.dessaperfumaria.com.br
-      - GF_SECURITY_ALLOW_EMBEDDING=true
-      - GF_SECURITY_COOKIE_SAMESITE=none
     ports:
       - "3000:3000"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/grafana.ini:/etc/grafana/grafana.ini
-      - /etc/letsencrypt/live/dash.gama.dessaperfumaria.com.br/fullchain.pem:/etc/grafana/fullchain.pem
-      - /etc/letsencrypt/live/dash.gama.dessaperfumaria.com.br/privkey.pem:/etc/grafana/privkey.pem
 
   rabbitmq:
     image: rabbitmq:3.13-management
