@@ -163,8 +163,8 @@ func main() {
 	// Set the number of OS threads to use
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	const numWorkers = 64
-	const queueSize = 1000
+	const numWorkers = 32
+	const queueSize = 500
 
 	jobChannel := make(chan Job, queueSize)
 	var wg sync.WaitGroup
@@ -177,69 +177,80 @@ func main() {
 		worker.Start(qr)
 	}
 
-	conn, err := amqp.Dial("amqp://guest:guest@rabbitmq:5672/")
-	if err != nil {
-		slog.Error("Failed to connect to RabbitMQ: %v", "error", err)
-	}
-	defer conn.Close()
+	// Create a pool of connections
+	const numConnections = 1
+	const channelsPerConnection = 3
+	connections := make([]*amqp.Connection, numConnections)
+	channels := make([]*amqp.Channel, numConnections*channelsPerConnection)
 
-	ch, err := conn.Channel()
-	if err != nil {
-		slog.Error("Failed to open a channel: %v", "error", err)
-	}
-	defer ch.Close()
+	for i := 0; i < numConnections; i++ {
+		conn, err := amqp.Dial(os.Getenv("RABBITMQ_URL"))
+		if err != nil {
+			slog.Error("Failed to connect to RabbitMQ: %v", "error", err)
+			return
+		}
+		defer conn.Close()
+		connections[i] = conn
 
-	q, err := ch.QueueDeclare(
-		QueueCollectUserDataName, // name
-		true,                     // durable
-		false,                    // delete when unused
-		false,                    // exclusive
-		false,                    // no-wait
-		nil,                      // arguments
-	)
-	if err != nil {
-		slog.Error("Failed to declare a queue: %v", "error", err)
-	}
-
-	msgs, err := ch.Consume(
-		q.Name, // queue
-		"",     // consumer
-		true,   // auto-ack
-		false,  // exclusive
-		false,  // no-local
-		false,  // no-wait
-		nil,    // args
-	)
-	if err != nil {
-		slog.Error("Failed to register a consumer: %v", "error", err)
+		for j := 0; j < channelsPerConnection; j++ {
+			ch, err := conn.Channel()
+			if err != nil {
+				slog.Error("Failed to open a channel: %v", "error", err)
+				return
+			}
+			defer ch.Close()
+			channels[i*channelsPerConnection+j] = ch
+		}
 	}
 
-	go func() {
-		for {
-			select {
-			case d, ok := <-msgs:
-				if !ok {
-					return
-				}
+	// Declare the queue and set up consumers on each channel
+	for i, ch := range channels {
+		q, err := ch.QueueDeclare(
+			QueueCollectUserDataName, // name
+			true,                     // durable
+			false,                    // delete when unused
+			false,                    // exclusive
+			false,                    // no-wait
+			nil,                      // arguments
+		)
+		if err != nil {
+			slog.Error("Failed to declare a queue on channel %d: %v", string(i), err)
+			continue
+		}
+
+		msgs, err := ch.Consume(
+			q.Name, // queue
+			"",     // consumer
+			true,   // auto-ack
+			false,  // exclusive
+			false,  // no-local
+			false,  // no-wait
+			nil,    // args
+		)
+		if err != nil {
+			slog.Error("Failed to register a consumer on channel %d: %v", string(i), err)
+			continue
+		}
+
+		go func(channelIndex int, messages <-chan amqp.Delivery) {
+			for d := range messages {
 				var job Job
 				if err := json.Unmarshal(d.Body, &job); err != nil {
-					slog.Error("Failed to decode job: %v", "error", err)
+					slog.Error("Failed to decode job on channel %d: %v", string(channelIndex), err)
 					continue
 				}
 				wg.Add(1)
 				func() {
 					defer func() {
 						if r := recover(); r != nil {
-							slog.Error("Failed to send job to jobChannel: %v", "error", r)
+							slog.Error("Failed to send job to jobChannel on channel %d: %v", string(channelIndex), "error", r)
 						}
 					}()
 					jobChannel <- job
 				}()
-			case <-quit:
-				return
 			}
-		}
-	}()
+		}(i, msgs)
+	}
 
 	slog.Info("Waiting for messages. To exit press CTRL+C")
 	<-quit
