@@ -34,9 +34,6 @@ services:
     image: grafana/grafana-oss
     restart: unless-stopped
     container_name: "gama-grafana"
-    environment:
-      - GF_SECURITY_ADMIN_USER=${GAMA_GRAFANA_USER}
-      - GF_SECURITY_ADMIN_PASSWORD=${GAMA_GRAFANA_PASSWORD}
     ports:
       - "3000:3000"
     volumes:
