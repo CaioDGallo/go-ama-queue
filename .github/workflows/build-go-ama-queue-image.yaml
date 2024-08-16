@@ -39,6 +39,6 @@ jobs:
             docker compose -f docker-compose.production.yaml build --no-cache
             docker compose -f docker-compose.production.yaml up --build -d
             sleep 15
-            docker exec -it gama-grafana grafana-cli admin reset-admin-password $GAMA_GRAFANA_PASSWORD
+            docker exec gama-grafana grafana-cli admin reset-admin-password $GAMA_GRAFANA_PASSWORD
             exit
 
