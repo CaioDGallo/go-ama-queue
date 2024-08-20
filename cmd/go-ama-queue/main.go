@@ -44,20 +44,17 @@ type UserDataMessage struct {
 	Timestamp        string `json:"timestamp"`
 }
 
-// Job represents a job to be processed
 type Job struct {
 	Payload UserDataMessage `json:"payload"`
 	ID      uuid.UUID       `json:"id"`
 }
 
-// Worker represents a worker that processes jobs
 type Worker struct {
 	JobChannel chan Job
 	WaitGroup  *sync.WaitGroup
 	ID         int
 }
 
-// NewWorker creates a new worker
 func NewWorker(id int, jobChannel chan Job, wg *sync.WaitGroup) Worker {
 	return Worker{
 		ID:         id,
@@ -85,11 +82,10 @@ func init() {
 	prometheus.MustRegister(jobProcessedCounter, jobDurationHistogram)
 }
 
-// Start starts the worker to process jobs
 func (w Worker) Start(qr *pgstore.Queries) {
 	go func() {
 		for job := range w.JobChannel {
-			startTime := time.Now() // Record start time
+			startTime := time.Now()
 			fmt.Printf(
 				"Worker %d processing job %s with payload: %s\n",
 				w.ID,
@@ -111,7 +107,7 @@ func (w Worker) Start(qr *pgstore.Queries) {
 
 			jobProcessedCounter.Inc()
 
-			duration := time.Since(startTime) // Calculate duration
+			duration := time.Since(startTime)
 			fmt.Printf("Worker %d finished job %s in %v\n", w.ID, job.ID.String(), duration)
 
 			jobDurationHistogram.Observe(duration.Seconds())
@@ -160,7 +156,6 @@ func main() {
 
 	qr := pgstore.New(pool)
 
-	// Set the number of OS threads to use
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	const numWorkers = 32
@@ -171,13 +166,11 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt)
 
-	// Create and start workers
 	for i := 1; i <= numWorkers; i++ {
 		worker := NewWorker(i, jobChannel, &wg)
 		worker.Start(qr)
 	}
 
-	// Create a pool of connections
 	const numConnections = 1
 	const channelsPerConnection = 3
 	connections := make([]*amqp.Connection, numConnections)
@@ -203,15 +196,14 @@ func main() {
 		}
 	}
 
-	// Declare the queue and set up consumers on each channel
 	for i, ch := range channels {
 		q, err := ch.QueueDeclare(
-			QueueCollectUserDataName, // name
-			true,                     // durable
-			false,                    // delete when unused
-			false,                    // exclusive
-			false,                    // no-wait
-			nil,                      // arguments
+			QueueCollectUserDataName,
+			true,
+			false,
+			false,
+			false,
+			nil,
 		)
 		if err != nil {
 			slog.Error("Failed to declare a queue on channel %d: %v", string(i), err)
@@ -219,13 +211,13 @@ func main() {
 		}
 
 		msgs, err := ch.Consume(
-			q.Name, // queue
-			"",     // consumer
-			true,   // auto-ack
-			false,  // exclusive
-			false,  // no-local
-			false,  // no-wait
-			nil,    // args
+			q.Name,
+			"",
+			true,
+			false,
+			false,
+			false,
+			nil,
 		)
 		if err != nil {
 			slog.Error("Failed to register a consumer on channel %d: %v", string(i), err)
