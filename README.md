@@ -17,6 +17,16 @@ Welcome to the GAMA (Go - Ask Me Anything) async job queue. This project is buil
 
 The GAMA Queue asynchronously processes user data collected from the main GAMA application. RabbitMQ is used as the message broker, Prometheus + Grafana for metrics observability and dashboards, and GoLang leveraging the power of goroutines to concurrently process the messages.
 
+- Grafana Dashboards:
+
+RabbitMQ:
+![RabbitMQ Dashboard](docs/assets/rabbitmq-dashboard.png)
+
+PostgreSQL:
+![PostgreSQL Dashboard](docs/assets/postgresql-dashboard.png)
+
+Go Runtime:
+![Go Runtime Dashboard](docs/assets/go-runtime-dashboard.png)
 
 ## Features
 
